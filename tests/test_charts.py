@@ -14,7 +14,7 @@ class ChartDataTests(unittest.TestCase):
             root=Path(directory);(root/'statistics').mkdir()
             (root/'statistics/daily-total.csv').write_text('date,input_output_total_tokens,output_tokens\n2026-10-01,100,2\n2026-10-03,300,3\nunknown,500,4\n')
             (root/'statistics/daily.csv').write_text('date,app,calls,input_output_total_tokens,output_tokens\n')
-            text=charts.build(root).read_text()
+            text=charts.build(root).read_text(encoding='utf-8')
             data=json.loads(re.search(r'id="agent-token-history-data">(.*?)</script>',text).group(1))
             self.assertEqual([r['tokens'] for r in data['rows']],[100,0,300])
             self.assertEqual([r['cumulative'] for r in data['rows']],[100,100,400])
@@ -26,7 +26,7 @@ class ChartDataTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);(root/'statistics').mkdir()
             (root/'statistics/daily.csv').write_text('date,app,calls,input_output_total_tokens,output_tokens\n2026-10-01,claude,2,100,5\n2026-10-01,codex,3,50,1\nunknown,codex,1,9,9\n')
-            text=charts.build_card(root).read_text()
+            text=charts.build_card(root).read_text(encoding='utf-8')
             data=json.loads(re.search(r'id="usage-data">(.*?)</script>',text).group(1))
             self.assertEqual(len(data['days']),1)
             day=data['days'][0]
