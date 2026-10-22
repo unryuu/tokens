@@ -1,0 +1,134 @@
+<div id="agent-token-history">
+  <style>
+    #agent-token-history { color:var(--foreground); }
+    #agent-token-history section { margin-bottom:24px; }
+    #agent-token-history .usage-chart { display:block; width:100%; overflow:visible; }
+    #agent-token-history .usage-chart text { fill:var(--foreground); font-size:12px; }
+    #agent-token-history .usage-chart .domain { stroke:var(--border); }
+    #agent-token-history .usage-chart .tick line { stroke:var(--border); }
+    #agent-token-history .heat-legend { display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; margin:8px 0; }
+    #agent-token-history .heat-legend span { display:inline-flex; gap:6px; align-items:center; }
+    #agent-token-history .heat-legend i { display:inline-block; width:12px; height:12px; }
+    #agent-token-history [data-detail] { margin:10px 0 16px; min-height:2em; }
+    #agent-token-history [data-calendar] { display:grid; gap:18px; }
+  </style>
+  <h2>Token 使用轨迹</h2>
+  <div class="text-small text-muted" data-range></div>
+  <section aria-label="累计用量折线图">
+    <h3>累计消耗</h3>
+    <div data-line></div>
+    <div class="text-small tabular-nums" data-detail aria-live="polite"></div>
+  </section>
+  <section aria-label="每日消耗贡献热力图">
+    <h3>每日消耗</h3>
+    <div data-calendar></div>
+    <div class="heat-legend text-small" data-legend></div>
+  </section>
+  <div class="sr-only" data-accessible></div>
+  <script type="application/json" id="agent-token-history-data">__TOKEN_CHART_DATA__</script>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+<script>
+(() => {
+  const root=document.getElementById('agent-token-history');
+  const data=JSON.parse(document.getElementById('agent-token-history-data').textContent);
+  const fmt=new Intl.NumberFormat('zh-CN');
+  const rows=data.rows.map(r=>({date:r.date,x:new Date(r.date+'T00:00:00Z'),value:r.tokens,cumulative:r.cumulative}));
+  if (!rows.length) {root.querySelector('[data-range]').textContent='暂无有效日期数据';return;}
+  if (typeof d3==='undefined') {root.querySelector('[data-range]').textContent='图表库未加载，请重新打开。';return;}
+  const byDate=new Map(rows.map(r=>[r.date,r]));
+  const dateKey=d3.utcFormat('%Y-%m-%d');
+  const first=rows[0],last=rows[rows.length-1];
+  root.querySelector('[data-range]').textContent=first.date+' — '+last.date+' · 输入＋输出总 token · 北京时间';
+  const stateDate=window.openai?.widgetState?.modelContent?.selected_date;
+  let selected=byDate.get(stateDate)||last;
+  let mark, xScale,yScale;
+  function detail(r) {
+    selected=r;
+    root.querySelector('[data-detail]').textContent=r.date+'　当日 '+(r.value/1e8).toFixed(2)+' 亿　累计 '+(r.cumulative/1e8).toFixed(2)+' 亿 token';
+    if (mark) mark.attr('cx',xScale(r.x)).attr('cy',yScale(r.cumulative));
+  }
+  function choose(r,save=false) {
+    detail(r);
+    if(save&&window.openai?.setWidgetState) window.openai.setWidgetState({modelContent:{selected_date:r.date},privateContent:null}).catch(()=>{});
+  }
+  window.addEventListener('openai:set_globals',event=>{
+    const date=event.detail?.globals?.widgetState?.modelContent?.selected_date;
+    if(byDate.has(date))detail(byDate.get(date));
+  });
+  const thresholds=[1e8,2e8,4e8,8e8];
+  const percentages=[20,38,58,78,100];
+  function color(n) {return n===0?'var(--muted)':'color-mix(in srgb, var(--viz-series-1) '+percentages[d3.bisectRight(thresholds,n)]+'%, var(--background))';}
+  const labels=['0','<1 亿','1–2 亿','2–4 亿','4–8 亿','≥8 亿'];
+  const legend=root.querySelector('[data-legend]');
+  labels.forEach((label,i)=>{
+    const span=document.createElement('span'),swatch=document.createElement('i');
+    swatch.style.background=i===0?'var(--muted)':color([1,1e8,2e8,4e8,8e8][i-1]);
+    span.append(swatch,document.createTextNode(label));legend.append(span);
+  });
+  const table=document.createElement('table');
+  const caption=document.createElement('caption');caption.textContent='逐日输入＋输出 token 与累计 token';table.append(caption);
+  rows.forEach(r=>{const tr=document.createElement('tr');[r.date,fmt.format(r.value),fmt.format(r.cumulative)].forEach(v=>{const td=document.createElement('td');td.textContent=v;tr.append(td);});table.append(tr);});
+  root.querySelector('[data-accessible]').append(table);
+  function drawLine(width) {
+    const height=300,left=64,right=18,top=34,bottom=height-58;
+    const frameLeft=left,frameRight=width-right;
+    const xDomain=d3.extent(rows,r=>r.x), yDomain=d3.extent([0,...rows.map(r=>r.cumulative)]);
+    xScale=d3.scaleUtc().domain(xDomain).range([frameLeft+5,frameRight-5]);
+    yScale=d3.scaleLinear().domain([0,yDomain[1]*1.10]).nice().range([bottom-5,top+5]);
+    const container=d3.select(root.querySelector('[data-line]'));container.selectAll('*').remove();
+    const svg=container.append('svg').attr('class','usage-chart').attr('viewBox',`0 0 ${width} ${height}`).attr('width',width).attr('height',height).attr('role','img').attr('aria-label','累计输入输出 token：'+first.date+' 至 '+last.date+'，截至最后一天 '+fmt.format(last.cumulative)+' token');
+    svg.append('title').text('累计消耗 token 折线图');
+    svg.append('rect').attr('data-chart-frame','').attr('x',frameLeft).attr('y',top).attr('width',frameRight-frameLeft).attr('height',bottom-top).attr('fill','none').attr('stroke','var(--border)');
+    const ticks=yScale.ticks(4);
+    svg.append('g').selectAll('line').data(ticks).join('line').attr('x1',frameLeft).attr('x2',frameRight).attr('y1',yScale).attr('y2',yScale).attr('stroke','var(--border)').attr('opacity',.55);
+    const yAxis=svg.append('g').attr('transform',`translate(${frameLeft},0)`).call(d3.axisLeft(yScale).tickValues(ticks).tickSize(0).tickPadding(9).tickFormat(v=>d3.format('.0f')(v/1e8)));yAxis.select('.domain').remove();
+    const xValues=width<480?[first.x,rows[Math.floor(rows.length/2)].x,last.x]:[first.x,...d3.utcMonth.range(d3.utcMonth.ceil(first.x),last.x),last.x];
+    const xAxis=svg.append('g').attr('transform',`translate(0,${bottom})`).call(d3.axisBottom(xScale).tickValues(xValues).tickSize(0).tickPadding(10).tickFormat(d3.utcFormat('%m/%d')));xAxis.select('.domain').remove();
+    xAxis.selectAll('.tick text').attr('text-anchor',(d,i,nodes)=>i===0?'start':i===nodes.length-1?'end':'middle');
+    svg.append('text').attr('class','axis-title').attr('data-axis','y').attr('x',left).attr('y',17).text('累计 token（亿）');
+    svg.append('text').attr('class','axis-title').attr('data-axis','x').attr('x',(frameLeft+frameRight)/2).attr('y',height-8).attr('text-anchor','middle').text('日期（北京时间）');
+    svg.append('path').datum(rows).attr('fill','none').attr('stroke','var(--viz-series-1)').attr('stroke-width',2.5).attr('d',d3.line().x(r=>xScale(r.x)).y(r=>yScale(r.cumulative)));
+    svg.append('text').attr('x',frameRight-7).attr('y',yScale(last.cumulative)-10).attr('text-anchor','end').text((last.cumulative/1e8).toFixed(2)+' 亿');
+    mark=svg.append('circle').attr('r',4).attr('fill','var(--viz-series-1)').attr('pointer-events','none');
+    const overlay=svg.append('rect').attr('data-chart-hit','').attr('class','cursor-interaction').attr('x',frameLeft).attr('y',top).attr('width',frameRight-frameLeft).attr('height',bottom-top).attr('fill','transparent');
+    function nearest(event) {const [px]=d3.pointer(event,svg.node());return rows[d3.bisector(r=>r.x).center(rows,xScale.invert(px))];}
+    overlay.on('pointermove',event=>choose(nearest(event))).on('click',event=>choose(nearest(event),true));
+    detail(selected);
+    // Keep ticks separated at narrow widths after actual text layout.
+    const tickTexts=xAxis.selectAll('.tick text').nodes();let lastRight=-Infinity;
+    tickTexts.forEach((node,i)=>{const bounds=node.getBoundingClientRect();if(bounds.left<lastRight+4&&i>0&&i<tickTexts.length-1)node.style.display='none';else lastRight=bounds.right;});
+  }
+  function drawCalendar(width) {
+    const container=d3.select(root.querySelector('[data-calendar]'));container.selectAll('*').remove();
+    const start=d3.utcMonday.floor(first.x),end=d3.utcMonday.offset(d3.utcMonday.floor(last.x),1);
+    const weeks=d3.utcMonday.range(start,end);
+    const perPanel=width<480?5:weeks.length;
+    const coarse=window.matchMedia('(pointer:coarse)').matches;
+    for(let offset=0;offset<weeks.length;offset+=perPanel){
+      const subset=weeks.slice(offset,offset+perPanel),left=38,top=28,gap=4;
+      const step=Math.min(coarse?48:40,(width-left)/subset.length),cell=step-gap;
+      const height=top+7*step+8;
+      const svg=container.append('svg').attr('class','usage-chart').attr('viewBox',`0 0 ${width} ${height}`).attr('width',width).attr('height',height).attr('role','img').attr('aria-label','每日输入输出 token 热力图，按周分列，周一至周日分行，颜色越深用量越高');
+      ['一','二','三','四','五','六','日'].forEach((name,i)=>svg.append('text').attr('x',8).attr('y',top+i*step+cell/2+4).text(name));
+      let previousMonth=null;
+      subset.forEach((week,j)=>{
+        const visibleMonth=d3.utcDay.offset(week,3).getUTCMonth();
+        if(visibleMonth!==previousMonth){svg.append('text').attr('x',left+j*step).attr('y',16).text((visibleMonth+1)+'月');previousMonth=visibleMonth;}
+        for(let i=0;i<7;i++){
+          const d=d3.utcDay.offset(week,i),key=dateKey(d),r=byDate.get(key);
+          const rect=svg.append('rect').attr('x',left+j*step).attr('y',top+i*step).attr('width',cell).attr('height',cell).attr('rx',3).attr('fill',r?color(r.value):'var(--muted)').attr('opacity',r?1:.25);
+          rect.attr('data-tooltip',r?key+' · '+fmt.format(r.value)+' token':key+' · 不在统计范围').attr('aria-label',r?key+'，'+fmt.format(r.value)+' token':key+'，不在统计范围');
+          if(r)rect.attr('class','cursor-interaction').on('pointerenter',()=>choose(r)).on('click',()=>choose(r,true));
+        }
+      });
+    }
+  }
+  let previousWidth=0;
+  new ResizeObserver(entries=>{
+    const width=Math.floor(entries[0].contentRect.width);
+    if(width<200||width===previousWidth)return;previousWidth=width;
+    drawLine(width);drawCalendar(width);
+  }).observe(root);
+})();
+</script>

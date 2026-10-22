@@ -1,0 +1,2 @@
+# Only needed if neither a zstd executable nor compression.zstd is available.
+zstandard

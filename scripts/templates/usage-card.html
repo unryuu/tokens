@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Token 用量</title>
+<style>
+  :root {
+    --page:#faf9f5; --card:#f0efeb; --tile:#e2e1dc; --chip:#e2e1dc;
+    --text:#141413; --muted:#87867f; --border:#e6e4dd;
+    --h1:#b9cff4; --h2:#8aafec; --h3:#5a8ce2; --h4:#2b64d2;
+    --bar:#5a8ce2; --tip:#141413; --tip-text:#faf9f5;
+    --line:#2b64d2; --grid:#dddbd3;
+    --app-codex:#3f9b7e; --app-claude:#d97757; --app-workbuddy:#9a82d4; --app-codebuddy:#c9a227;
+  }
+  :root[data-theme="dark"] {
+    --page:#262624; --card:#30302e; --tile:#3d3d3a; --chip:#454541;
+    --text:#faf9f5; --muted:#a3a199; --border:#3d3d3a;
+    --h1:#2c4677; --h2:#3c62a6; --h3:#5283d6; --h4:#82aaf2;
+    --bar:#5283d6; --tip:#faf9f5; --tip-text:#141413;
+    --line:#82aaf2; --grid:#45443f;
+    --app-codex:#55b493; --app-claude:#e08a6b; --app-workbuddy:#ad98e6; --app-codebuddy:#d8b545;
+  }
+  :root[data-export-black] { --page:#000; --card:#111; --tile:#252525; --chip:#333; --grid:#333; }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; display:flex; align-items:flex-start; justify-content:center; padding:48px 16px;
+    background:var(--page); color:var(--text);
+    font:15px/1.4 ui-sans-serif,-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased; }
+  .card { width:100%; max-width:560px; background:var(--card); border-radius:16px; padding:20px 22px 18px; }
+  .bar-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; gap:8px; }
+  .seg { display:flex; gap:2px; }
+  .seg button { border:0; background:none; color:var(--muted); font:inherit; font-size:15px; padding:5px 11px; border-radius:8px; cursor:pointer; }
+  .seg button:hover { color:var(--text); }
+  .seg button[aria-pressed="true"] { background:var(--chip); color:var(--text); }
+  .tiles { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:12px; }
+  .tile { background:var(--tile); border-radius:10px; padding:9px 12px 10px; min-width:0; }
+  .tile .k { color:var(--muted); font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .tile .v { font-size:19px; font-weight:600; font-variant-numeric:tabular-nums; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .tile .v.soft { font-weight:500; font-size:17px; }
+  .heat { display:grid; grid-auto-flow:column; grid-template-rows:repeat(7,1fr); gap:4px; }
+  .heat i { display:block; aspect-ratio:1; border-radius:3px; background:var(--tile); }
+  .heat i.void { background:none; }
+  .heat i.out { opacity:.35; }
+  .heat i[data-l="1"] { background:var(--h1); } .heat i[data-l="2"] { background:var(--h2); }
+  .heat i[data-l="3"] { background:var(--h3); } .heat i[data-l="4"] { background:var(--h4); }
+  .heat i:not(.void):hover { outline:1.5px solid var(--text); outline-offset:1px; }
+  .note { color:var(--muted); font-size:14px; margin-top:14px; }
+  .apps { display:grid; gap:14px; padding:4px 0 2px; }
+  .app-head { display:flex; justify-content:space-between; font-variant-numeric:tabular-nums; margin-bottom:6px; }
+  .app-head b { font-weight:600; }
+  .app-head span { color:var(--muted); }
+  .track { height:8px; border-radius:4px; background:var(--tile); overflow:hidden; }
+  .track div { height:100%; border-radius:4px; background:var(--bar); }
+  .app-sub { color:var(--muted); font-size:13px; margin-top:5px; font-variant-numeric:tabular-nums; }
+  .trend svg { display:block; width:100%; overflow:visible; }
+  .trend text { fill:var(--muted); font-size:12px; font-variant-numeric:tabular-nums; }
+  .trend .end-label { fill:var(--text); font-size:15px; font-weight:600; }
+  .legend { display:flex; flex-wrap:wrap; gap:6px 14px; color:var(--muted); font-size:13px; margin-top:8px; }
+  .legend span { display:inline-flex; align-items:center; gap:5px; }
+  .legend i { width:9px; height:9px; border-radius:2px; display:inline-block; }
+  .legend i.ln { width:14px; height:2px; border-radius:1px; }
+  .tip .row { display:flex; justify-content:space-between; gap:14px; }
+  .tip .row i { width:8px; height:8px; border-radius:2px; display:inline-block; margin-right:5px; }
+  .tip .head { font-weight:600; margin-bottom:3px; }
+  .tip .sep { margin-top:4px; padding-top:4px; border-top:1px solid color-mix(in srgb, var(--tip-text) 25%, transparent); }
+  .right { display:flex; align-items:center; gap:4px; }
+  .theme { border:0; background:none; color:var(--muted); width:30px; height:30px; border-radius:8px; cursor:pointer; display:grid; place-items:center; padding:0; }
+  .theme:hover { color:var(--text); background:var(--chip); }
+  .theme svg { width:17px; height:17px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; }
+  .tip { position:fixed; pointer-events:none; background:var(--tip); color:var(--tip-text); font-size:13px; padding:6px 9px; border-radius:7px;
+    white-space:nowrap; font-variant-numeric:tabular-nums; opacity:0; transition:opacity .08s; z-index:9; }
+  [hidden] { display:none !important; }
+  @media (max-width:420px) { .tiles { grid-template-columns:repeat(2,1fr); } .heat { gap:3px; } }
+</style>
+</head>
+<body>
+<main class="card">
+  <div class="bar-row">
+    <div class="seg" data-group="view">
+      <button data-v="overview" aria-pressed="true">概览</button>
+      <button data-v="trend" aria-pressed="false">趋势</button>
+      <button data-v="apps" aria-pressed="false">软件</button>
+    </div>
+    <div class="right">
+      <div class="seg" data-group="range">
+        <button data-v="all" aria-pressed="true">全部</button>
+        <button data-v="30" aria-pressed="false">30天</button>
+        <button data-v="7" aria-pressed="false">7天</button>
+      </div>
+      <button class="theme" data-theme-toggle></button>
+    </div>
+  </div>
+  <section data-view="overview">
+    <div class="tiles" data-tiles></div>
+    <div class="heat" data-heat aria-label="每日 token 热力图，按周分列，周一至周日分行"></div>
+  </section>
+  <section data-view="trend" class="trend" hidden><div data-trend></div><div class="legend" data-legend></div></section>
+  <section data-view="apps" hidden><div class="apps" data-apps></div></section>
+  <div class="note" data-note></div>
+</main>
+<div class="tip" data-tip></div>
+<script type="application/json" id="usage-data">__USAGE_CARD_DATA__</script>
+<script>
+(() => {
+  const data = JSON.parse(document.getElementById('usage-data').textContent);
+  const $ = s => document.querySelector(s);
+  const NAMES = {claude:'Claude', codex:'Codex', workbuddy:'WorkBuddy', codebuddy:'CodeBuddy'};
+  const color = app => `var(--app-${app}, var(--bar))`;
+  // 参照物 token 数为粗略估算（中文按约 1 字 1 token），从大到小排列，自动挑倍数最顺口的一个。
+  const REFS = [
+    {name:'英文维基百科', tokens:6e9, unit:'遍'},
+    {name:'《四库全书》', tokens:8e8, unit:'部'},
+    {name:'《永乐大典》', tokens:3.7e8, unit:'部'},
+    {name:'《大英百科全书》', tokens:5.7e7, unit:'套'},
+    {name:'《哈利·波特》全七册', tokens:1.4e6, unit:'套'},
+    {name:'《红楼梦》', tokens:1e6, unit:'部'},
+    {name:'《指环王》', tokens:5.76e5, unit:'部'},
+  ];
+  const DAY = 864e5;
+  const toDate = s => new Date(s + 'T00:00:00Z');
+  const key = d => d.toISOString().slice(0, 10);
+  const int = new Intl.NumberFormat('zh-CN');
+  function compact(n) {
+    if (n >= 1e8) return +(n / 1e8).toFixed(n >= 1e10 ? 0 : n >= 1e9 ? 1 : 2) + ' 亿';
+    if (n >= 1e4) return +(n / 1e4).toFixed(n >= 1e6 ? 0 : 1) + ' 万';
+    return int.format(n);
+  }
+  const days = new Map(data.days.map(r => [r.date, r]));
+  const end = data.days.length ? toDate(data.days[data.days.length - 1].date) : null;
+  const state = {view:'overview', range:'all'};
+
+  function inRange(dateStr) {
+    if (state.range === 'all') return true;
+    return (end - toDate(dateStr)) / DAY < Number(state.range);
+  }
+  function stats() {
+    const rows = data.days.filter(r => inRange(r.date) && r.tokens > 0);
+    const s = {tokens:0, output:0, calls:0, apps:{}};
+    for (const r of rows) {
+      s.tokens += r.tokens; s.output += r.output; s.calls += r.calls;
+      for (const [app, v] of Object.entries(r.apps)) {
+        const a = s.apps[app] ||= {tokens:0, output:0, calls:0};
+        a.tokens += v.tokens; a.output += v.output; a.calls += v.calls;
+      }
+    }
+    s.top = Object.entries(s.apps).sort((a, b) => b[1].tokens - a[1].tokens)[0]?.[0];
+    return s;
+  }
+
+  function renderTiles(s) {
+    const tiles = [
+      ['调用次数', int.format(s.calls)],
+      ['总 token', compact(s.tokens)],
+      ['模型输出', compact(s.output)],
+      ['最常用', s.top ? NAMES[s.top] || s.top : '—', true],
+    ];
+    $('[data-tiles]').innerHTML = tiles.map(([k, v, soft]) =>
+      `<div class="tile"><div class="k">${k}</div><div class="v${soft ? ' soft' : ''}">${v}</div></div>`).join('');
+  }
+
+  function levels() {
+    // 用量跨度大，按活跃日的四分位分档，避免一两天高峰把其他日子压成浅色。
+    const v = data.days.filter(r => r.tokens > 0).map(r => r.tokens).sort((a, b) => a - b);
+    const q = p => v[Math.min(v.length - 1, Math.floor(p * v.length))];
+    const cuts = [q(.25), q(.5), q(.75)];
+    return n => n <= 0 ? 0 : 1 + cuts.filter(c => n > c).length;
+  }
+
+  function renderHeat() {
+    const box = $('[data-heat]');
+    if (!end) { box.innerHTML = ''; return; }
+    const level = levels();
+    const monday = d => new Date(d - ((d.getUTCDay() + 6) % 7) * DAY);
+    const first = monday(toDate(data.days[0].date)), lastWeek = monday(end);
+    const span = Math.round((lastWeek - first) / DAY / 7) + 1;
+    const cols = Math.max(26, span);
+    const start = new Date(lastWeek - (cols - 1) * 7 * DAY);
+    box.style.gridTemplateColumns = `repeat(${cols},1fr)`;
+    const cells = [];
+    for (let i = 0; i < cols * 7; i++) {
+      const d = new Date(+start + i * DAY), k = key(d);
+      if (d > end) { cells.push('<i class="void"></i>'); continue; }
+      const r = days.get(k), n = r ? r.tokens : 0;
+      const out = inRange(k) ? '' : ' class="out"';
+      cells.push(`<i${out} data-l="${level(n)}" data-d="${k}"></i>`);
+    }
+    box.innerHTML = cells.join('');
+  }
+
+  function renderApps(s) {
+    const list = Object.entries(s.apps).sort((a, b) => b[1].tokens - a[1].tokens);
+    if (!list.length) { $('[data-apps]').innerHTML = '<div class="app-sub">这段时间没有用量</div>'; return; }
+    const max = list[0][1].tokens;
+    $('[data-apps]').innerHTML = list.map(([app, a]) => `
+      <div>
+        <div class="app-head"><b>${NAMES[app] || app}</b><span>${compact(a.tokens)} · ${(a.tokens / s.tokens * 100).toFixed(1)}%</span></div>
+        <div class="track"><div style="background:${color(app)};width:${(a.tokens / max * 100).toFixed(2)}%"></div></div>
+        <div class="app-sub">${int.format(a.calls)} 次调用 · 输出 ${compact(a.output)}</div>
+      </div>`).join('');
+  }
+
+  function compare(n) {
+    // 返回 [倍数文本, 参照物]；倍数在 0.8–1 之间时倍数为 null，表示"快赶上一个"。
+    for (const ref of REFS) {
+      const m = n / ref.tokens;
+      if (m >= 1) return [m >= 10 ? int.format(Math.round(m)) : m.toFixed(1).replace(/\.0$/, ''), ref];
+      if (m >= .8) return [null, ref];
+    }
+    const ref = REFS[REFS.length - 1];
+    return [(n / ref.tokens).toFixed(1), ref];
+  }
+  function renderNote(s) {
+    if (!s.tokens) { $('[data-note]').textContent = '这段时间没有用量。'; return; }
+    const [tm, tr] = compare(s.tokens);
+    const parts = [tm ? `用掉的 token 够读完 ${tm} ${tr.unit}${tr.name}` : `用掉的 token 快够读完一${tr.unit}${tr.name}`];
+    if (s.output) {
+      const [om, or] = compare(s.output);
+      parts.push(om ? `模型亲手写出了约 ${om} ${or.unit}${or.name}` : `模型亲手写出的量快赶上一${or.unit}${or.name}`);
+    }
+    $('[data-note]').textContent = parts.join('，') + '。';
+  }
+
+  function series() {
+    // 范围内逐日补零，累计从范围起点重新算。
+    const start = state.range === 'all' ? toDate(data.days[0].date) : new Date(end - (Number(state.range) - 1) * DAY);
+    const rows = []; let cum = 0;
+    for (let d = start; d <= end; d = new Date(+d + DAY)) {
+      const k = key(d), r = days.get(k), t = r ? r.tokens : 0;
+      cum += t; rows.push({date:k, tokens:t, apps:r ? r.apps : {}, cum});
+    }
+    return rows;
+  }
+  function niceStep(max, count) {
+    const raw = max / count, mag = 10 ** Math.floor(Math.log10(raw));
+    return [1, 2, 2.5, 5, 10].find(m => m * mag >= raw) * mag;
+  }
+  let trendRows = [], trendGeom = null;
+  function renderTrend(s) {
+    const box = $('[data-trend]'), width = box.clientWidth;
+    if (!width || !end) return;
+    const rows = trendRows = series(), n = rows.length, total = rows[n - 1].cum;
+    const apps = Object.entries(s.apps).sort((a, b) => b[1].tokens - a[1].tokens).map(([a]) => a);
+    const H = 230, top = 26, bottom = H - 26, left = 0, right = width - 44;
+    const step = (right - left) / n, x = i => left + step * (i + .5);
+    const gridStep = niceStep(total || 1, 3), yMax = Math.max(gridStep, Math.ceil(total / gridStep) * gridStep);
+    const yLine = v => bottom - v / yMax * (bottom - top);
+    const dMax = Math.max(1, ...rows.map(r => r.tokens)), barH = v => v / dMax * (bottom - top) * .45;
+    const bw = Math.max(1.5, Math.min(18, step * .64));
+    const out = [`<svg viewBox="0 0 ${width} ${H}" height="${H}" role="img" aria-label="累计 token 折线与每日用量柱">`,
+      `<defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--line);stop-opacity:.2"/><stop offset="1" style="stop-color:var(--line);stop-opacity:0"/></linearGradient></defs>`];
+    for (let v = 0; v <= yMax + 1; v += gridStep) {
+      const y = yLine(v);
+      out.push(`<line x1="${left}" x2="${right}" y1="${y}" y2="${y}" style="stroke:var(--grid)" stroke-width="1"/>`);
+      if (v) out.push(`<text x="${width}" y="${y + 4}" text-anchor="end">${compact(v)}</text>`);
+    }
+    rows.forEach((r, i) => {
+      let y = bottom;
+      for (const app of apps) {
+        const v = r.apps[app]?.tokens; if (!v) continue;
+        const h = barH(v); y -= h;
+        out.push(`<rect x="${x(i) - bw / 2}" y="${y}" width="${bw}" height="${h}" style="fill:${color(app)}" opacity=".55"/>`);
+      }
+    });
+    const pts = rows.map((r, i) => `${x(i).toFixed(1)},${yLine(r.cum).toFixed(1)}`);
+    out.push(`<path d="M${pts.join('L')}L${x(n - 1)},${bottom}L${x(0)},${bottom}Z" fill="url(#area)"/>`);
+    out.push(`<path d="M${pts.join('L')}" fill="none" style="stroke:var(--line)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`);
+    const lx = x(n - 1), ly = yLine(total);
+    out.push(`<circle cx="${lx}" cy="${ly}" r="3.5" style="fill:var(--line)"/>`);
+    out.push(`<text class="end-label" x="${lx - 8}" y="${Math.max(16, ly - 10)}" text-anchor="end">${compact(total)}</text>`);
+    // 横轴：首尾日期，中间标月份；太挤的就不画。
+    const md = k => +k.slice(5, 7) + '/' + +k.slice(8);
+    const ticks = [[0, md(rows[0].date), 'start']];
+    rows.forEach((r, i) => { if (i && r.date.endsWith('-01')) ticks.push([i, +r.date.slice(5, 7) + '月', 'middle']); });
+    ticks.push([n - 1, md(rows[n - 1].date), 'end']);
+    let last = -Infinity;
+    ticks.forEach(([i, label, anchor], j) => {
+      const tx = anchor === 'start' ? left : anchor === 'end' ? right : x(i);
+      if (j && j < ticks.length - 1 && (tx - last < 40 || right - tx < 40)) return;
+      out.push(`<text x="${tx}" y="${H - 6}" text-anchor="${anchor}">${label}</text>`); last = tx;
+    });
+    out.push(`<line data-hair x1="0" x2="0" y1="${top - 6}" y2="${bottom}" style="stroke:var(--muted)" stroke-dasharray="2 3" opacity="0"/>`);
+    out.push(`<circle data-dot r="4" style="fill:var(--line);stroke:var(--card)" stroke-width="2" opacity="0"/>`);
+    out.push(`<rect data-hit x="${left}" y="0" width="${right - left}" height="${bottom}" fill="transparent"/></svg>`);
+    box.innerHTML = out.join('');
+    trendGeom = {left, step, n, x, yLine};
+    $('[data-legend]').innerHTML = apps.map(a => `<span><i style="background:${color(a)};opacity:.75"></i>${NAMES[a] || a}</span>`).join('')
+      + '<span><i class="ln" style="background:var(--line)"></i>累计</span>';
+  }
+
+  function render() {
+    const s = stats();
+    document.querySelectorAll('[data-view]').forEach(el => el.hidden = el.dataset.view !== state.view);
+    renderTiles(s); renderHeat(); renderApps(s); renderNote(s);
+    if (state.view === 'trend') renderTrend(s);
+    tip.style.opacity = 0;
+  }
+
+  document.querySelectorAll('.seg').forEach(group => group.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    group.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    state[group.dataset.group] = b.dataset.v; render();
+  }));
+
+  const tip = $('[data-tip]');
+  $('[data-heat]').addEventListener('pointerover', e => {
+    const k = e.target.dataset?.d; if (!k) return;
+    const r = days.get(k);
+    tip.textContent = r && r.tokens ? `${k} · ${compact(r.tokens)} token · ${int.format(r.calls)} 次` : `${k} · 无用量`;
+    const b = e.target.getBoundingClientRect();
+    tip.style.opacity = 1;
+    const w = tip.offsetWidth;
+    tip.style.left = Math.max(8, Math.min(innerWidth - w - 8, b.left + b.width / 2 - w / 2)) + 'px';
+    tip.style.top = (b.top - tip.offsetHeight - 6) + 'px';
+  });
+  $('[data-heat]').addEventListener('pointerleave', () => tip.style.opacity = 0);
+
+  const trendBox = $('[data-trend]');
+  trendBox.addEventListener('pointermove', e => {
+    if (!trendGeom || !e.target.matches('[data-hit]')) return;
+    const svg = trendBox.querySelector('svg'), b = svg.getBoundingClientRect();
+    const g = trendGeom, i = Math.max(0, Math.min(g.n - 1, Math.floor((e.clientX - b.left - g.left) / g.step)));
+    const r = trendRows[i], cx = g.x(i), cy = g.yLine(r.cum);
+    const hair = svg.querySelector('[data-hair]'), dot = svg.querySelector('[data-dot]');
+    hair.setAttribute('x1', cx); hair.setAttribute('x2', cx); hair.setAttribute('opacity', .6);
+    dot.setAttribute('cx', cx); dot.setAttribute('cy', cy); dot.setAttribute('opacity', 1);
+    const lines = Object.entries(r.apps).filter(([, v]) => v.tokens).sort((a, b) => b[1].tokens - a[1].tokens)
+      .map(([a, v]) => `<div class="row"><span><i style="background:${color(a)}"></i>${NAMES[a] || a}</span><span>${compact(v.tokens)}</span></div>`);
+    tip.innerHTML = `<div class="head">${r.date}</div>`
+      + `<div class="row"><span>当日</span><span>${r.tokens ? compact(r.tokens) : '无用量'}</span></div>` + lines.join('')
+      + `<div class="row sep"><span>累计</span><span>${compact(r.cum)}</span></div>`;
+    tip.style.opacity = 1;
+    const w = tip.offsetWidth, px = b.left + cx;
+    tip.style.left = (px + 14 + w < innerWidth - 8 ? px + 14 : px - 14 - w) + 'px';
+    tip.style.top = Math.max(8, b.top + cy - tip.offsetHeight / 2) + 'px';
+  });
+  trendBox.addEventListener('pointerleave', () => {
+    tip.style.opacity = 0;
+    trendBox.querySelectorAll('[data-hair],[data-dot]').forEach(el => el.setAttribute('opacity', 0));
+  });
+  let trendWidth = 0;
+  new ResizeObserver(() => {
+    const w = trendBox.clientWidth;
+    if (w && w !== trendWidth && state.view === 'trend') { trendWidth = w; renderTrend(stats()); }
+  }).observe(trendBox);
+
+  // 主题：跟随系统 → 浅色 → 深色，循环切换；选择记在本机浏览器里。
+  const ICONS = {
+    auto:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg>',
+    light:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></svg>',
+    dark:'<svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>',
+  };
+  const LABELS = {auto:'跟随系统', light:'浅色', dark:'深色'};
+  const ORDER = ['auto', 'light', 'dark'];
+  const system = matchMedia('(prefers-color-scheme: dark)');
+  const toggle = $('[data-theme-toggle]');
+  const exportBlack = new URLSearchParams(location.search).get('theme') === 'black';
+  document.documentElement.toggleAttribute('data-export-black', exportBlack);
+  let theme = 'auto';
+  try { theme = localStorage.getItem('usage-card-theme') || 'auto'; } catch {}
+  function applyTheme() {
+    const dark = exportBlack || theme === 'dark' || (theme === 'auto' && system.matches);
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    toggle.innerHTML = ICONS[theme];
+    toggle.title = exportBlack ? '主题：黑色导出模式' : '主题：' + LABELS[theme] + '（点击切换）';
+    toggle.disabled = exportBlack;
+    toggle.setAttribute('aria-label', toggle.title);
+  }
+  toggle.addEventListener('click', () => {
+    theme = ORDER[(ORDER.indexOf(theme) + 1) % ORDER.length];
+    try { localStorage.setItem('usage-card-theme', theme); } catch {}
+    applyTheme();
+  });
+  system.addEventListener('change', applyTheme);
+  applyTheme();
+
+  render();
+})();
+</script>
+</body>
+</html>

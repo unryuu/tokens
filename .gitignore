@@ -1,0 +1,10 @@
+/backups/
+/reports/
+/local-sources.json
+/.local/
+/.venv/
+/.claude/
+__pycache__/
+.DS_Store
+/statistics/*
+!/statistics/README.md
