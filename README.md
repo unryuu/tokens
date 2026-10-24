@@ -10,6 +10,17 @@
 
 后续在同一个工作区说“帮我备份并更新图表”即可。另一台电脑也执行同样流程；多机共同对账使用你自己的统计仓库，见 [工作流](WORKFLOW.md)。
 
+也可以说“导出 Claude 会话《会话名称》”。导出器保存原话 Markdown、离线 HTML、可展开的工具附录、日志内的图片和原始 JSONL，默认只写入被忽略的 `reports/exports/`。同名会话会先列出供确认；定位规则和完整说明见 [导出流程](WORKFLOW.md#按会话名导出-claude-对话)。
+
+```sh
+uv venv .venv                             # 已有虚拟环境时直接使用
+uv pip install --python .venv/bin/python -r requirements-export.txt
+.venv/bin/python scripts/export_claude.py "会话名称" --list
+.venv/bin/python scripts/export_claude.py "会话名称"
+```
+
+Windows 将 `.venv/bin/python` 换成 `.venv\Scripts\python.exe`。导出只读取本机记录，不调用模型，不自动上传；支持 Claude Code JSONL。
+
 ## 手动运行
 
 ```sh

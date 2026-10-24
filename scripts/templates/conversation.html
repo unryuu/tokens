@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<title>$title · 对话存档</title>
+<style>
+:root{color-scheme:light;--paper:#faf8f4;--ink:#2c2925;--muted:#77716a;--line:#ded8ce;--accent:#9c5942}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--paper);color:var(--ink);font:17px/1.9 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}main{max-width:880px;margin:auto;padding:72px 32px 80px}.eyebrow{font-size:12px;letter-spacing:.18em;color:var(--accent)}h1{font-family:"Songti SC",serif;font-size:38px;line-height:1.45;letter-spacing:.02em;font-weight:600;margin:18px 0 24px}.subtitle{color:var(--muted);font-size:14px}.intro{padding-bottom:36px;border-bottom:1px solid var(--line)}nav{display:flex;gap:22px;flex-wrap:wrap;padding:20px 0;color:var(--accent);font-size:14px}a{color:var(--accent);text-decoration:none;overflow-wrap:anywhere}a:hover{text-decoration:underline}.message{padding:34px 0;border-bottom:1px solid var(--line);scroll-margin-top:24px}.message.user{background:#f0ece4;border-radius:10px;padding:24px 28px;margin:28px -28px;border:0}.message-meta{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:14px;flex-wrap:wrap}.message-meta span{font-weight:650;letter-spacing:.05em;color:var(--accent)}.message-meta a{margin-left:auto}.message-body{margin-top:17px;overflow-wrap:anywhere}.message-body>:first-child{margin-top:0}p{margin:1em 0}h2,h3,h4{line-height:1.5;margin:1.6em 0 .6em}h2{font-size:24px}h3{font-size:20px}h4{font-size:18px}ul,ol{padding-left:1.7em}li>p{margin:.4em 0}pre{background:#ece8df;border:1px solid var(--line);border-radius:6px;padding:18px;overflow:auto;white-space:pre-wrap;word-break:break-word;font:13px/1.65 ui-monospace,SFMono-Regular,monospace}code{font-size:.85em;background:#ece8df;padding:.12em .3em;border-radius:3px}pre code{padding:0;background:none;font-size:inherit}blockquote{border-left:3px solid #c9b6a6;margin:1.4em 0;padding:0 20px;color:#655c52}table{border-collapse:collapse;display:block;overflow-x:auto;max-width:100%;font-size:14px}th,td{border:1px solid var(--line);padding:8px 12px;min-width:85px}th{background:#eee8df}hr{border:0;border-top:1px solid var(--line);margin:24px 0}img{max-width:100%;height:auto;border-radius:4px}.appendix{margin-top:70px}.technical-entry{border-bottom:1px solid var(--line);padding:14px 0}.technical-entry summary{cursor:pointer;font-size:14px;color:var(--accent)}.technical-entry>p,.source-note{font-size:12px;color:var(--muted)}.footer{margin-top:50px;font-size:12px;color:var(--muted);overflow-wrap:anywhere}.attachment-note{color:var(--muted);font-size:14px}@media(max-width:650px){main{padding:38px 22px}h1{font-size:29px}.message.user{margin:24px -10px;padding:20px 10px}body{font-size:16px}}@media print{body{background:white;font-size:11pt}main{max-width:none;padding:0}nav,.message-meta a{display:none}.appendix{display:none}.message{break-inside:auto}.message-meta{break-after:avoid}.message.user{background:#f4f1eb;margin:15px 0;padding:15px}h1{font-size:24pt}.intro{padding-bottom:20px}a{color:inherit}}
+</style>
+</head>
+<body><main>
+<header class="intro">
+<div class="eyebrow">CLAUDE CODE · CONVERSATION ARCHIVE</div>
+<h1>$title</h1>
+<p class="subtitle">$date_range · 北京时间</p>
+<p class="subtitle">$counts<br>按原话与记录顺序，保留讨论、执行和交接的过程。</p>
+$warnings
+</header>
+<nav><a href="#message-1">开始阅读</a><a href="$last_anchor">最后的对话</a><a href="#appendix">工具与附件附录</a><a href="对话原文.md">Markdown 原文</a></nav>
+$dialogue
+<section class="appendix" id="appendix"><h2>工具与附件附录</h2>
+<p class="subtitle">$tool_counts · 点击逐项展开。仅阅读正文时无需展开。</p>
+$technical
+</section>
+<footer class="footer">原会话 ID：$session_id<br>原始 JSONL SHA-256：$source_sha256<br>导出：$exported_at<br>HTML 正文及附录中的图片内嵌保存，无需联网；原始记录另存于同目录。</footer>
+</main></body>
+</html>

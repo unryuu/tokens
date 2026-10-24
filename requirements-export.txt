@@ -1,0 +1,2 @@
+# Optional: Markdown rendering for local Claude conversation exports (Python 3.9+).
+markdown-it-py>=3.0,<4

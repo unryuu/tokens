@@ -80,3 +80,20 @@ Windows 的安装目标改为 `.venv\Scripts\python.exe`。如果本机没有 uv
 用浏览器打开 `statistics/usage-card.html`，包括概览热力图、累计趋势与每日柱、软件占比，支持全部/30天/7天。`statistics/token-charts.html` 是可嵌入的 D3 图表片段，依赖 CDN；独立用量卡无需外部依赖。日期统一 UTC+08:00，曲线和热力图采用输入＋输出总量，单独显示模型输出。
 
 导出黑底图片：打开用量卡的 `?theme=black` 地址（本地 HTTP 或 file URL 均可），选择“全部”，依次切换概览、趋势、软件，截取卡片及四周黑色边距，保存 PNG。保持三张尺寸相同，检查文字、图例和日期完整。示例见 `examples/`。使用浏览器截图，无需生成式图片工具。
+
+## 按会话名导出 Claude 对话
+
+用户说“导出 Claude 会话《某个名字》”时，在本工作区运行 `scripts/export_claude.py`，生成与纪念存档相同风格的 Markdown 和离线 HTML，不需要重新备份或调用模型。没有项目虚拟环境时先运行 `uv venv .venv`，再安装 `requirements-export.txt`；macOS 使用 `uv pip install --python .venv/bin/python -r requirements-export.txt`，Windows 使用 `.venv\Scripts\python.exe`。随后均用该环境的 Python 运行：
+
+```sh
+python scripts/export_claude.py "会话名称" --list
+python scripts/export_claude.py "会话名称"
+python scripts/export_claude.py --session-id "确认后的会话ID"
+python scripts/export_claude.py --source "会话.jsonl"
+```
+
+搜索覆盖本机 `.claude*` profile、`CLAUDE_CONFIG_DIR`、`local-sources.json` 中分类为 claude 的来源，以及本仓库备份清单中的 Claude JSONL。额外迁移目录可用 `--search-root "目录"` 补充。优先完整标题，其次唯一的部分标题；同名但会话 ID 不同，先向用户确认候选及日期，再用 `--session-id`，不能自行猜选。同一 ID 多副本优先本机原记录，原记录缺失时选消息时间较新的备份；不拼接不同版本，必要时用 `--source` 指定版本。没有自定义标题时可用会话 ID 或文件路径定位。当前只导出 Claude Code JSONL，不能把 Codex 或普通 Claude 网页记录当作兼容格式。
+
+默认输出到被 Git 忽略的 `reports/exports/<日期>/<标题>-<时间>/`，每次新建，不覆盖旧导出。正文保留用户与 Claude 原话、顺序和北京时间；工具调用、返回、自动通知及分支发言放入附录，HTML 可展开。日志实际包含的图片内嵌到 HTML，并另存 assets；源 JSONL 保留字节副本，同名会话目录中的子代理和工具附件一并存档。外部引用文件不自动打包，未写入日志的内容无法凭空恢复。损坏或仍在写入的 JSONL 行在清单及阅读版提示，原字节仍保留；系统提示、思考签名和重复请求载荷留在原始记录，不混入阅读正文。
+
+完成后核对 `导出清单.json` 的 complete 状态、消息条数、警告和 SHA-256，在浏览器检查开篇、结尾及附件，再给用户 HTML、Markdown 和目录链接。导出文件、截图和清单均不提交 Git；只有通用脚本、模板、依赖说明、合成数据测试和工作流同步到公开 tokens 仓库，具体会话内容须另获公开授权。
