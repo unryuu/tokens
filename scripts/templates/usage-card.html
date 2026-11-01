@@ -49,6 +49,11 @@
   .apps { display:grid; gap:14px; padding:4px 0 2px; }
   .app-head { display:flex; justify-content:space-between; font-variant-numeric:tabular-nums; margin-bottom:6px; }
   .app-head b { font-weight:600; }
+  .app-head b { overflow-wrap:anywhere; min-width:0; }
+  .app-head span { flex-shrink:0; margin-left:12px; }
+  .model-filter { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:13px; margin-bottom:14px; }
+  .model-filter select { min-width:0; max-width:100%; flex:1; font:inherit; color:var(--text); background:var(--tile); border:0; border-radius:7px; padding:7px 9px; }
+  .coverage { color:var(--muted); font-size:13px; margin:0 0 16px; }
   .app-head span { color:var(--muted); }
   .track { height:8px; border-radius:4px; background:var(--tile); overflow:hidden; }
   .track div { height:100%; border-radius:4px; background:var(--bar); }
@@ -71,7 +76,8 @@
   .tip { position:fixed; pointer-events:none; background:var(--tip); color:var(--tip-text); font-size:13px; padding:6px 9px; border-radius:7px;
     white-space:nowrap; font-variant-numeric:tabular-nums; opacity:0; transition:opacity .08s; z-index:9; }
   [hidden] { display:none !important; }
-  @media (max-width:420px) { .tiles { grid-template-columns:repeat(2,1fr); } .heat { gap:3px; } }
+  @media (max-width:560px) { .bar-row { flex-wrap:wrap; } .right { margin-left:auto; } }
+  @media (max-width:420px) { .tiles { grid-template-columns:repeat(2,1fr); } .heat { gap:3px; } .app-head { flex-wrap:wrap; gap:4px; } .app-head span { margin-left:0; } }
 </style>
 </head>
 <body>
@@ -81,6 +87,7 @@
       <button data-v="overview" aria-pressed="true">概览</button>
       <button data-v="trend" aria-pressed="false">趋势</button>
       <button data-v="apps" aria-pressed="false">软件</button>
+      <button data-v="models" aria-pressed="false">模型</button>
     </div>
     <div class="right">
       <div class="seg" data-group="range">
@@ -91,12 +98,14 @@
       <button class="theme" data-theme-toggle></button>
     </div>
   </div>
+  <label class="model-filter">模型 <select data-model-filter aria-label="筛选模型"><option value="">全部模型</option></select></label>
   <section data-view="overview">
     <div class="tiles" data-tiles></div>
     <div class="heat" data-heat aria-label="每日 token 热力图，按周分列，周一至周日分行"></div>
   </section>
   <section data-view="trend" class="trend" hidden><div data-trend></div><div class="legend" data-legend></div></section>
   <section data-view="apps" hidden><div class="apps" data-apps></div></section>
+  <section data-view="models" hidden><div class="coverage" data-model-coverage></div><div class="apps" data-models></div></section>
   <div class="note" data-note></div>
 </main>
 <div class="tip" data-tip></div>
@@ -107,6 +116,13 @@
   const $ = s => document.querySelector(s);
   const NAMES = {claude:'Claude', codex:'Codex', workbuddy:'WorkBuddy', codebuddy:'CodeBuddy'};
   const color = app => `var(--app-${app}, var(--bar))`;
+  const esc = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const modelLabel = model => model === 'unknown' ? '未知模型' : model === 'conflicting' ? '模型信息冲突' : model;
+  const modelColor = model => {
+    if (model === 'unknown' || model === 'conflicting') return 'var(--muted)';
+    let hash = 0; for (const c of model) hash = (hash * 31 + c.charCodeAt(0)) >>> 0;
+    return `hsl(${hash % 360} 48% 56%)`;
+  };
   // 参照物 token 数为粗略估算（中文按约 1 字 1 token），从大到小排列，自动挑倍数最顺口的一个。
   const REFS = [
     {name:'英文维基百科', tokens:6e9, unit:'遍'},
@@ -126,22 +142,42 @@
     if (n >= 1e4) return +(n / 1e4).toFixed(n >= 1e6 ? 0 : 1) + ' 万';
     return int.format(n);
   }
-  const days = new Map(data.days.map(r => [r.date, r]));
+  let filteredDays = data.days;
+  let days = new Map(filteredDays.map(r => [r.date, r]));
   const end = data.days.length ? toDate(data.days[data.days.length - 1].date) : null;
-  const state = {view:'overview', range:'all'};
+  const state = {view:'overview', range:'all', model:''};
+  const modelTotals = new Map();
+  data.days.forEach(r => Object.entries(r.models || {}).forEach(([name, v]) => modelTotals.set(name, (modelTotals.get(name) || 0) + v.tokens)));
+  for (const [name] of [...modelTotals].sort((a,b) => b[1]-a[1] || a[0].localeCompare(b[0]))) {
+    const option = document.createElement('option'); option.value = name; option.textContent = modelLabel(name);
+    $('[data-model-filter]').append(option);
+  }
+  $('[data-model-filter]').addEventListener('change', e => {
+    state.model = e.target.value;
+    filteredDays = data.days.map(r => {
+      if (!state.model) return r;
+      const v = r.models[state.model] || {tokens:0, output:0, calls:0, apps:{}};
+      return {date:r.date, ...v, models:v.calls ? {[state.model]:v} : {}};
+    });
+    days = new Map(filteredDays.map(r => [r.date, r])); render();
+  });
 
   function inRange(dateStr) {
     if (state.range === 'all') return true;
     return (end - toDate(dateStr)) / DAY < Number(state.range);
   }
   function stats() {
-    const rows = data.days.filter(r => inRange(r.date) && r.tokens > 0);
-    const s = {tokens:0, output:0, calls:0, apps:{}};
+    const rows = filteredDays.filter(r => inRange(r.date) && r.tokens > 0);
+    const s = {tokens:0, output:0, calls:0, apps:{}, models:Object.create(null)};
     for (const r of rows) {
       s.tokens += r.tokens; s.output += r.output; s.calls += r.calls;
       for (const [app, v] of Object.entries(r.apps)) {
         const a = s.apps[app] ||= {tokens:0, output:0, calls:0};
         a.tokens += v.tokens; a.output += v.output; a.calls += v.calls;
+      }
+      for (const [name, v] of Object.entries(r.models || {})) {
+        const m = s.models[name] ||= {tokens:0, output:0, calls:0};
+        for (const k of ['tokens','output','calls']) m[k] += v[k];
       }
     }
     s.top = Object.entries(s.apps).sort((a, b) => b[1].tokens - a[1].tokens)[0]?.[0];
@@ -161,7 +197,7 @@
 
   function levels() {
     // 用量跨度大，按活跃日的四分位分档，避免一两天高峰把其他日子压成浅色。
-    const v = data.days.filter(r => r.tokens > 0).map(r => r.tokens).sort((a, b) => a - b);
+    const v = filteredDays.filter(r => r.tokens > 0).map(r => r.tokens).sort((a, b) => a - b);
     const q = p => v[Math.min(v.length - 1, Math.floor(p * v.length))];
     const cuts = [q(.25), q(.5), q(.75)];
     return n => n <= 0 ? 0 : 1 + cuts.filter(c => n > c).length;
@@ -198,6 +234,19 @@
         <div class="track"><div style="background:${color(app)};width:${(a.tokens / max * 100).toFixed(2)}%"></div></div>
         <div class="app-sub">${int.format(a.calls)} 次调用 · 输出 ${compact(a.output)}</div>
       </div>`).join('');
+  }
+
+  function renderModels(s) {
+    const list = Object.entries(s.models).sort((a,b) => b[1].tokens-a[1].tokens || a[0].localeCompare(b[0]));
+    const unknown = (s.models.unknown?.tokens || 0) + (s.models.conflicting?.tokens || 0);
+    $('[data-model-coverage]').textContent = s.tokens
+      ? `已识别模型 ${((s.tokens-unknown)/s.tokens*100).toFixed(1)}%（按读写 token）。未知或冲突保留在总量中；模型名按日志记录。`
+      : '这段时间没有用量。';
+    const max = list[0]?.[1].tokens || 1;
+    $('[data-models]').innerHTML = list.map(([name,m]) => `
+      <div><div class="app-head"><b>${esc(modelLabel(name))}</b><span>${compact(m.tokens)} · ${(m.tokens/s.tokens*100).toFixed(1)}%</span></div>
+      <div class="track"><div style="background:${modelColor(name)};width:${(m.tokens/max*100).toFixed(2)}%"></div></div>
+      <div class="app-sub">${int.format(m.calls)} 次调用 · 输出 ${compact(m.output)}</div></div>`).join('');
   }
 
   function compare(n) {
@@ -291,7 +340,7 @@
   function render() {
     const s = stats();
     document.querySelectorAll('[data-view]').forEach(el => el.hidden = el.dataset.view !== state.view);
-    renderTiles(s); renderHeat(); renderApps(s); renderNote(s);
+    renderTiles(s); renderHeat(); renderApps(s); renderModels(s); renderNote(s);
     if (state.view === 'trend') renderTrend(s);
     tip.style.opacity = 0;
   }

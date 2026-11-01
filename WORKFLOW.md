@@ -48,7 +48,7 @@ Windows 的安装目标改为 `.venv\Scripts\python.exe`。如果本机没有 uv
 
 1. 确认本地备份成功，再运行 `python3 scripts/backup.py --publish-stats`。这只生成 `statistics/devices/<本机ID>/` 和合并统计，不发送网络请求。
 2. 用 `git status` / `git diff` 检查，只提交工作流与 `statistics/`。原始对话、manifest、本机配置和私人报告不能强制加入 Git。统计 CSV 的调用 ID 已哈希，字段有固定白名单。
-3. 提交自己的更改后 `git fetch origin`、`git rebase origin/main`。不同设备的分片各自保留；如果仅 `statistics/daily.csv` / `daily-total.csv` / `summary.json` / `OVERVIEW.md` / `token-charts.html` / `usage-card.html` 冲突，运行 `--merge-stats` 重建它们，标记解决并继续 rebase，不丢弃任一设备的分片。若同一个设备分片冲突，先核实是否错误复用了 device ID；不要直接 ours/theirs 覆盖。
+3. 提交自己的更改后 `git fetch origin`、`git rebase origin/main`。不同设备的分片各自保留；如果仅 `statistics/daily.csv` / `daily-total.csv` / `daily-model.csv` / `summary.json` / `OVERVIEW.md` / `token-charts.html` / `usage-card.html` 冲突，运行 `--merge-stats` 重建它们，标记解决并继续 rebase，不丢弃任一设备的分片。若同一个设备分片冲突，先核实是否错误复用了 device ID；不要直接 ours/theirs 覆盖。
 4. 再运行 `--merge-stats`，检查去重合计及 `git diff --check`，如有派生统计变化则提交，最后 push。脚本不会替你自动 commit 或 push。拒绝发布或未授权时，工作仍完整保留在本地。
 
 ## 工作目录＋备份区＋多台电脑的对账去重
@@ -61,7 +61,7 @@ Windows 的安装目标改为 `.venv\Scripts\python.exe`。如果本机没有 uv
 
 本地先合并工作目录、备份区和保留快照的调用；授权发布后，每台电脑更新自己的 `statistics/devices/<随机ID>/events/` 月度账本。GitHub 保存这些分片作为共同对账依据，`--merge-stats` 对所有分片再次按 event_id 取并集，生成逐日表和合计。不得直接相加各电脑的总数。重复导出、复制原始记录或重复运行合并，都不应增加同一调用的计数。各设备保持独立 device ID，使用同一统计规则版本。
 
-发布的对账元数据仅包含调用哈希、日期、软件类别和 token 计数；不上传原文、原始消息 ID、标题、本机路径或密钥。源文件位置等追溯信息留在本机清单。若导入过程重新生成 ID 或修改时间，必须先核对导入映射，当前哈希规则不能保证自动识别这种重复。跨工具身份映射需明确实现和验证后才能用于扣重；无法确认时报告影响范围，不按“文字相似”擅自合并。
+发布的对账元数据仅包含调用哈希、日期、软件类别、记录中的模型名和 token 计数；不上传原文、原始消息 ID、标题、本机路径或密钥。源文件位置等追溯信息留在本机清单。若导入过程重新生成 ID 或修改时间，必须先核对导入映射，当前哈希规则不能保证自动识别这种重复。跨工具身份映射需明确实现和验证后才能用于扣重；无法确认时报告影响范围，不按“文字相似”擅自合并。
 
 验收例：A 原目录有甲、乙，B 工作目录有乙、丙，B 备份区有甲、乙、丁。B 本地应得到甲、乙、丙、丁各一次；与 A 上传的账本合并后仍是这四次，丁不能因来自备份区而漏掉。移动文件、增加一份副本、重复发布均不改变结果。扩展解析器或导入支持时，用这个例子验证，并核对输入＋输出总量与 LLM 输出量两项口径。
 
@@ -75,11 +75,21 @@ Windows 的安装目标改为 `.venv\Scripts\python.exe`。如果本机没有 uv
 
 ## 本地可视化和图片
 
-备份成功后运行 `python3 scripts/backup.py --publish-stats`：这里的 publish 仅把本机调用整理到本地 `statistics/` 并生成图表，不联网、不提交 Git。本公共工具仓库默认忽略这些产物。已有多机账本时运行 `--merge-stats` 重新去重汇总；仅重画图可运行 `python3 scripts/charts.py`。
+备份或 --report 后先打开 `reports/<快照>/statistics/usage-card.html` 查看私有合并图表；不必发布账本。本公共工具仓库默认忽略这些产物。需要更新本地发布分片时运行 --publish-stats（不联网），已有多机发布账本用 --merge-stats 重新去重汇总；仅重画已发布图表可运行 `python3 scripts/charts.py`。
 
-用浏览器打开 `statistics/usage-card.html`，包括概览热力图、累计趋势与每日柱、软件占比，支持全部/30天/7天。`statistics/token-charts.html` 是可嵌入的 D3 图表片段，依赖 CDN；独立用量卡无需外部依赖。日期统一 UTC+08:00，曲线和热力图采用输入＋输出总量，单独显示模型输出。
+用浏览器打开 `statistics/usage-card.html`，包括概览热力图、累计趋势与每日柱、软件和模型占比，支持模型筛选及全部/30天/7天。`statistics/token-charts.html` 是可嵌入的 D3 图表片段，依赖 CDN；独立用量卡无需外部依赖。日期统一 UTC+08:00，曲线和热力图采用输入＋输出总量，单独显示模型输出。
 
 导出黑底图片：打开用量卡的 `?theme=black` 地址（本地 HTTP 或 file URL 均可），选择“全部”，依次切换概览、趋势、软件，截取卡片及四周黑色边距，保存 PNG。保持三张尺寸相同，检查文字、图例和日期完整。示例见 `examples/`。使用浏览器截图，无需生成式图片工具。
+
+## 按模型统计与旧账本升级
+
+每次备份或 `python3 scripts/backup.py --report` 会从当前及保留的历史快照提取模型信息，写入私有 `.local/events.csv` 和 `reports/<快照>/daily-model.csv`。同时将本机最新调用与已发布的多机账本按调用 ID 合并，生成 `reports/<快照>/statistics/usage-card.html`；不改写已发布分片，不联网。概览、热力图、趋势和软件分布共用模型筛选，“模型”页按读写总 token 排序，并展示输出量与模型识别覆盖率。重新统计不会扫描未备份的新会话；需要纳入新记录时先执行正常备份及清理。
+
+Claude 使用消息的 model；Codex 按 token_count 所处轮次的 turn_context.model 归属，不能用会话最后选中的模型覆盖整段历史；WorkBuddy / CodeBuddy 优先使用消息模型，其次提供商 model / requestModelId。缺失字段归为 unknown，副本的已知模型可补全未知模型；两个已知模型不一致时归为 conflicting，保留用量并报告冲突。模型标签按日志原样区分，不擅自合并第三方别名，不宣称可以证明实际底层模型。
+
+账本 schema_version 升为 2，新增 model 列；rules_version 仍为 2，调用 ID、日期和 token 计数规则不变，模型不参与去重身份。新版同时读取旧、新表头；旧分片归入 unknown，与新版副本合并时只补模型、各计数仍取最大值，不能将模型分组再相加到原合计。其他电脑先拉取新版流程，再用 --report 从自己保留的原始备份重算。发布仍须用户授权：--publish-stats 升级本机分片并保留既有历史，--merge-stats 合并所有电脑；新旧分片可混用，不能因其他电脑还未升级而丢掉它们的用量。
+
+新增 daily-model.csv（日期、软件、模型、调用数及两种 token 口径），summary.json 提供 metrics_by_model 和模型覆盖量。核对升级前后每条调用的 ID、日期及原有计数字段完全一致，模型分组的总和应等于全量；重复合并、复制文件及发布不应增加调用。原始记录、私人报告和新的模型统计不因工具升级自动上传；公开 tokens 仓库只同步通用实现、合成测试和流程。
 
 ## 按会话名导出 Claude 对话
 

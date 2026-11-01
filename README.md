@@ -1,6 +1,6 @@
 # Tokens · 留住对话，看见用量
 
-扫描本地 coding agent 记录，保存可校验的增量备份，按日统计 token，并生成概览、趋势和软件分布图。支持 macOS、Windows、Linux；主要脚本只依赖 Python 3.9+ 标准库。
+扫描本地 coding agent 记录，保存可校验的增量备份，按日统计 token，并生成概览、趋势、软件和模型分布图。支持 macOS、Windows、Linux；主要脚本只依赖 Python 3.9+ 标准库。
 
 原文始终留在本机。这个公开仓库提供工具、工作流和经授权的示例图片，不包含示例对应的原始对话或逐条调用账本。个人备份、配置、报告和生成的统计默认被 Git 忽略。
 
@@ -31,7 +31,7 @@ python3 scripts/backup.py                  # 增量备份、SHA-256 校验、逐
 python3 scripts/backup.py --publish-stats  # 整理本地账本并生成图表，不联网、不提交 Git
 ```
 
-打开 `statistics/usage-card.html` 即可查看图表，无需安装前端依赖。Windows 使用 `py -3` 替代 `python3`，也可双击 `备份.cmd`；macOS 可双击 `备份.command`。双击入口只负责备份与统计，生成图表继续运行上面的 `--publish-stats`。已有虚拟环境时优先使用其中的 Python。
+备份完成后打开 `reports/<快照>/statistics/usage-card.html` 即可查看私有图表，无需安装前端依赖；运行 --publish-stats 后也会生成 `statistics/usage-card.html`。Windows 使用 `py -3` 替代 `python3`，也可双击 `备份.cmd`；macOS 可双击 `备份.command`。双击入口也生成 reports/ 下的私有图表。已有虚拟环境时优先使用其中的 Python。
 
 ```sh
 python3 scripts/backup.py --verify        # 校验最近快照
@@ -65,6 +65,8 @@ python3 -m unittest discover -s tests
 ## 两种用量口径
 
 **输入＋输出总 token** 包括反复读取的上下文、缓存输入，适合观察累计处理量；热力图和趋势图使用这个口径。**模型输出 token** 只计生成量，可能含推理与工具调用，不等于交付字数或成果价值。日期统一 UTC+08:00，缺失日期归入 unknown。这里统计本地日志留存的用量，不是完整历史账单。
+
+支持按日志中的模型统计每日用量、模型排行及筛选。旧设备分片可以继续合并，缺失模型归入 unknown；模型不会改变调用身份。其他电脑拉取新版后重算自己的备份即可补全，见 [升级步骤](WORKFLOW.md#按模型统计与旧账本升级)。
 
 字段定义见 [统计说明](statistics/README.md)，扫描、增量备份、回收站清理、多机对账及图片导出详见 [WORKFLOW.md](WORKFLOW.md)。
 

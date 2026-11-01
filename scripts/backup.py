@@ -297,9 +297,13 @@ def usage_report(snapshot, manifest):
                  'Codex: first observed last_token_usage, then differences of cumulative counters; identical timestamp+usage events across copied/forked histories counted once. Cached input and reasoning output are subsets, not added again.',
                  'Codex database counters may inherit parent usage. They are reported separately, never added to JSONL usage.',
                  'WorkBuddy: recorded total_tokens (cache read is included in input); traces are preserved but excluded from totals.',
-                 'Conversation files and detailed reports stay local. Publishing exports only hashed event IDs, dates, app labels and counters.']}
+                 'Conversation files and detailed reports stay local. Publishing exports only hashed event IDs, dates, app/model labels and counters.']}
     report_dir = ROOT / 'reports' / snapshot.name; report_dir.mkdir(parents=True, exist_ok=True)
     daily.write_local(ROOT, report_dir, events)
+    model_summary = daily.merge(ROOT,extra_events=events,output_root=report_dir)
+    result['model_statistics'] = {'local_daily':'daily-model.csv',
+        'combined_visualization':'statistics/usage-card.html',
+        'combined_model_coverage':model_summary['model_coverage_input_output_tokens']}
     (report_dir / 'usage.json').write_text(json.dumps(result, ensure_ascii=False, indent=2),encoding='utf-8')
     lines = ['# 本地备份与 Token 统计', '', f'快照：{snapshot.name}',
         f'成功备份 {len(manifest["files"])} 个文件，共 {sum(x["bytes"] for x in manifest["files"]):,} 字节；失败 {len(manifest["errors"])} 个。',
@@ -308,7 +312,7 @@ def usage_report(snapshot, manifest):
     lines += [f'| {app} | {u.get("input_tokens",0)+u.get("output_tokens",0):,} | {u.get("output_tokens",0):,} |' for app,u in totals.items()]
     lines += ['',f'LLM 输出总量：**{result["output_tokens"]:,}** token。它反映生成规模，可能包含推理与工具调用，不等于最终交付字数。']
     lines += ['', f'现存调用记录合计（含压缩归档）：**{result["observed_total_tokens"]:,}**。这不是全部历史账单总量。', '',
-        '每日统计见同目录 daily.csv，统一按北京时间（UTC+08:00）分日。无有效日期的用量归入 unknown，不猜日期。',
+        '每日统计见同目录 daily.csv，按软件及模型拆分见 daily-model.csv；本机与已发布账本合并的私有可视化见 statistics/usage-card.html。统一按北京时间分日，缺失日期或模型归入 unknown，不猜测。',
         f'已排除导入历史等仅有 total 的起始计数：{coverage.get("codex_total_only_tokens_excluded",0):,} token。',
         '标准化输入已包含缓存写入和读取，缓存列是输入的子项；推理输出不重复相加。',
         '原文按源路径存放在快照 files/ 下；manifest.json 包含源路径、SHA-256 和复制状态。SQLite 使用一致性快照，原始 JSONL 不改写。',

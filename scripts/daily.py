@@ -1,4 +1,4 @@
-"""Usage events contain only hashed identities, dates, source labels and counters."""
+"""Usage events contain only hashed identities, dates, app/model labels and counters."""
 import collections
 import csv
 import datetime as dt
@@ -10,9 +10,30 @@ import uuid
 
 TZ = dt.timezone(dt.timedelta(hours=8))
 FIELDS = ['input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_write_tokens', 'total_tokens']
-EVENT_FIELDS = ['event_id', 'date', 'app'] + FIELDS
+LEGACY_EVENT_FIELDS = ['event_id', 'date', 'app'] + FIELDS
+EVENT_FIELDS = ['event_id', 'date', 'app', 'model'] + FIELDS
 DAILY_FIELDS = ['date', 'app', 'calls'] + FIELDS + ['input_output_total_tokens']
+MODEL_DAILY_FIELDS = ['date', 'app', 'model', 'calls'] + FIELDS + ['input_output_total_tokens']
 RULES_VERSION = 2
+SCHEMA_VERSION = 2
+UNKNOWN_MODEL = 'unknown'
+CONFLICTING_MODEL = 'conflicting'
+
+
+def model_name(value):
+    if not isinstance(value, str): return UNKNOWN_MODEL
+    value = value.strip()
+    if not value or len(value) > 200 or any(ord(c) < 32 for c in value): return UNKNOWN_MODEL
+    return value
+
+
+def merge_model(a, b):
+    """Commutative metadata enrichment; disagreement never changes call identity."""
+    a, b = model_name(a), model_name(b)
+    if a == b: return a
+    if a == UNKNOWN_MODEL: return b
+    if b == UNKNOWN_MODEL: return a
+    return CONFLICTING_MODEL
 
 
 def event_id(app, identity):
@@ -51,9 +72,10 @@ def normalized(app, usage):
 
 def combine(old, new):
     """Idempotent union; streaming updates retain final counts, not their sum."""
-    if old is None: return dict(new)
+    if old is None: return {**new, 'model':model_name(new.get('model'))}
     if old['app'] != new['app']: raise ValueError('event ID has conflicting app')
     result = dict(old)
+    result['model'] = merge_model(old.get('model'), new.get('model'))
     valid = sorted(x for x in [old['date'], new['date']] if x != 'unknown')
     result['date'] = valid[0] if valid else 'unknown'
     for field in FIELDS: result[field] = max(int(old[field]), int(new[field]))
@@ -72,13 +94,17 @@ def collect(snapshot, manifest, read_records):
         p = snapshot / entry['path']; app = entry['app']
         if app not in {'claude','codex','workbuddy','codebuddy'}: continue
         if not p.name.endswith(('.jsonl', '.jsonl.zst')) or '/traces/' in str(entry['source']).replace('\\','/'): continue
-        previous = {}; sid = p.name.removesuffix('.zst').removesuffix('.jsonl')[-36:]
+        previous = {}; current_model = UNKNOWN_MODEL
+        sid = p.name.removesuffix('.zst').removesuffix('.jsonl')[-36:]
         if app == 'codex' and p.name.startswith('rollout-'): codex_ids.add(sid)
         for row in read_records(p, errors):
             timestamp = row.get('timestamp'); payload = row.get('payload') or {}
             if app == 'codex':
+                if row.get('type') == 'turn_context':
+                    current_model = model_name(payload.get('model'))
                 if row.get('type') == 'session_meta':
                     sid = payload.get('id', payload.get('session_id', sid)); codex_ids.add(sid)
+                    current_model = model_name(payload.get('model'))
                 if row.get('type') != 'event_msg' or payload.get('type') != 'token_count': continue
                 info = payload.get('info') or {}; current = info.get('total_token_usage')
                 if not isinstance(current, dict): continue
@@ -100,6 +126,7 @@ def collect(snapshot, manifest, read_records):
                 if not delta.get('total_tokens',0): continue
                 identity = [timestamp, info]
                 usage = delta
+                model = model_name(payload.get('model') or info.get('model') or current_model)
             else:
                 message = row.get('message') or {}
                 if not isinstance(message,dict): continue
@@ -109,16 +136,20 @@ def collect(snapshot, manifest, read_records):
                     continue
                 identity = message.get('id') or row.get('requestId') or row.get('id') or row.get('uuid')
                 provider = row.get('providerData') or {}
+                model = model_name(message.get('model') or row.get('model') or
+                                   provider.get('model') or provider.get('requestModelId'))
                 if app in {'workbuddy','codebuddy'} and provider.get('messageId'):
                     identity = [provider.get('conversationRequestId'),provider['messageId'],provider.get('stepSeq')]
                 if not identity:
                     identity = event_id('fallback',row); coverage[app+'_usage_rows_without_id'] += 1
             eid = event_id(app, identity)
-            e = {'event_id':eid, 'date':day(timestamp), 'app':app, **normalized(app,usage)}
+            e = {'event_id':eid, 'date':day(timestamp), 'app':app, 'model':model, **normalized(app,usage)}
             if not e['total_tokens']: continue
             events[eid] = combine(events.get(eid), e)
     coverage['events_without_valid_date'] = sum(e['date']=='unknown' for e in events.values())
     coverage['unique_usage_events'] = len(events)
+    coverage['events_without_model'] = sum(e['model']==UNKNOWN_MODEL for e in events.values())
+    coverage['events_with_conflicting_models'] = sum(e['model']==CONFLICTING_MODEL for e in events.values())
     return events, errors, coverage, codex_ids
 
 
@@ -142,15 +173,21 @@ def collect_history(root, snapshot, manifest, read_records):
         for eid,event in more.items():events[eid]=combine(events.get(eid),event)
     coverage['unique_usage_events']=len(events)
     coverage['events_without_valid_date']=sum(e['date']=='unknown' for e in events.values())
+    coverage['events_without_model']=sum(e['model']==UNKNOWN_MODEL for e in events.values())
+    coverage['events_with_conflicting_models']=sum(e['model']==CONFLICTING_MODEL for e in events.values())
     return events,errors,coverage,ids
 
 
-def aggregate(events):
+def aggregate(events, by_model=False):
     buckets = collections.defaultdict(collections.Counter)
     for event in events.values():
-        bucket = buckets[(event['date'],event['app'])]; bucket['calls'] += 1
+        key = (event['date'],event['app'])
+        if by_model: key += (model_name(event.get('model')),)
+        bucket = buckets[key]; bucket['calls'] += 1
         for field in FIELDS: bucket[field] += event[field]
-    return [dict(date=date,app=app,**dict(value),input_output_total_tokens=value['input_tokens']+value['output_tokens']) for (date,app),value in sorted(buckets.items())]
+    return [dict(date=key[0],app=key[1],**({'model':key[2]} if by_model else {}),
+                 **dict(value),input_output_total_tokens=value['input_tokens']+value['output_tokens'])
+            for key,value in sorted(buckets.items())]
 
 
 def write_csv(path, fields, rows):
@@ -164,8 +201,9 @@ def load_events(paths):
     for path in sorted(paths):
         with path.open(newline='',encoding='utf-8') as f:
             reader = csv.DictReader(f)
-            if reader.fieldnames != EVENT_FIELDS: raise ValueError(f'Unexpected event schema: {path}')
+            if reader.fieldnames not in (EVENT_FIELDS, LEGACY_EVENT_FIELDS): raise ValueError(f'Unexpected event schema: {path}')
             for row in reader:
+                row['model'] = model_name(row.get('model'))
                 if len(row['event_id']) != 64 or any(c not in '0123456789abcdef' for c in row['event_id']):
                     raise ValueError(f'Invalid event ID: {path}')
                 if row['app'] not in {'claude','codex','workbuddy','codebuddy'}: raise ValueError('Invalid app')
@@ -180,8 +218,10 @@ def load_events(paths):
 def write_local(root, report_dir, events):
     # This private ledger allows export without re-reading transcripts.
     cache = root/'.local/events.csv'
-    write_csv(cache, EVENT_FIELDS, sorted(events.values(),key=lambda e:(e['date'],e['app'],e['event_id'])))
+    rows = [{**e,'model':model_name(e.get('model'))} for e in events.values()]
+    write_csv(cache, EVENT_FIELDS, sorted(rows,key=lambda e:(e['date'],e['app'],e['event_id'])))
     write_csv(report_dir/'daily.csv',DAILY_FIELDS,aggregate(events))
+    write_csv(report_dir/'daily-model.csv',MODEL_DAILY_FIELDS,aggregate(events,by_model=True))
 
 
 def export(root):
@@ -202,22 +242,29 @@ def export(root):
     for month, rows in months.items():
         write_csv(destination/'events'/f'{month}.csv',EVENT_FIELDS,sorted(rows,key=lambda e:(e['date'],e['app'],e['event_id'])))
     write_csv(destination/'daily.csv',DAILY_FIELDS,aggregate(events))
-    metadata = {**device,'schema_version':1,'rules_version':RULES_VERSION,
+    write_csv(destination/'daily-model.csv',MODEL_DAILY_FIELDS,aggregate(events,by_model=True))
+    metadata = {**device,'schema_version':SCHEMA_VERSION,'rules_version':RULES_VERSION,
                 'generated_at':dt.datetime.now(TZ).isoformat(timespec='seconds')}
     (destination/'device.json').write_text(json.dumps(metadata,indent=2)+'\n',encoding='utf-8')
     merge(root)
     return destination
 
 
-def merge(root):
-    base = root/'statistics'
-    metadata = list((base/'devices').glob('*/device.json'))
+def merge(root, extra_events=None, output_root=None):
+    """Merge published ledgers; optional private events/output never publish a device."""
+    source = root/'statistics'
+    base = Path(output_root or root)/'statistics'
+    base.mkdir(parents=True,exist_ok=True)
+    metadata = list((source/'devices').glob('*/device.json'))
     for p in metadata:
         if json.loads(p.read_text(encoding='utf-8')).get('rules_version') != RULES_VERSION:
             raise ValueError(f'Usage rules differ for {p}; regenerate that device export first')
-    paths = list((base/'devices').glob('*/events/*.csv'))
-    events = load_events(paths); daily = aggregate(events)
+    paths = list((source/'devices').glob('*/events/*.csv'))
+    events = load_events(paths)
+    for eid,event in (extra_events or {}).items():events[eid]=combine(events.get(eid),event)
+    daily = aggregate(events)
     write_csv(base/'daily.csv',DAILY_FIELDS,daily)
+    write_csv(base/'daily-model.csv',MODEL_DAILY_FIELDS,aggregate(events,by_model=True))
     by_date=collections.defaultdict(collections.Counter)
     for row in daily:
         for field in ['calls']+FIELDS:by_date[row['date']][field]+=row[field]
@@ -229,13 +276,24 @@ def merge(root):
     for event in events.values():
         for field in FIELDS:by_app_metrics[event['app']][field]+=event[field]
     for metrics in by_app_metrics.values():metrics['input_output_total_tokens']=metrics['input_tokens']+metrics['output_tokens']
-    summary = {'schema_version':1,'rules_version':RULES_VERSION,'timezone':'UTC+08:00',
+    by_model_metrics=collections.defaultdict(collections.Counter)
+    for event in events.values():
+        metrics=by_model_metrics[model_name(event.get('model'))]
+        metrics['calls']+=1
+        for field in FIELDS: metrics[field]+=event[field]
+    for metrics in by_model_metrics.values():metrics['input_output_total_tokens']=metrics['input_tokens']+metrics['output_tokens']
+    model_coverage={name:sum(e['input_tokens']+e['output_tokens'] for e in events.values()
+                           if (e['model'] not in {UNKNOWN_MODEL,CONFLICTING_MODEL} if name=='known' else e['model']==name))
+                    for name in ('known',UNKNOWN_MODEL,CONFLICTING_MODEL)}
+    summary = {'schema_version':SCHEMA_VERSION,'rules_version':RULES_VERSION,'timezone':'UTC+08:00',
                'devices':len(metadata),'unique_calls':len(events),'days_with_usage':len(valid_dates),
                'date_range':[valid_dates[0],valid_dates[-1]] if valid_dates else [],
                'total_tokens':sum(totals.values()),'by_app':dict(sorted(totals.items())),
                'input_output_total_tokens':sum(m['input_output_total_tokens'] for m in by_app_metrics.values()),
                'output_tokens':sum(m['output_tokens'] for m in by_app_metrics.values()),
                'metrics_by_app':{app:dict(m) for app,m in sorted(by_app_metrics.items())},
+               'metrics_by_model':{model:dict(m) for model,m in sorted(by_model_metrics.items())},
+               'model_coverage_input_output_tokens':model_coverage,
                'unknown_date_tokens':sum(e['total_tokens'] for e in events.values() if e['date']=='unknown')}
     (base/'summary.json').write_text(json.dumps(summary,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
     lines=['# Token 用量总览','',
@@ -245,9 +303,14 @@ def merge(root):
         f'| LLM 输出总量 | {summary["output_tokens"]:,} |','',
         '| 软件 | 输入＋输出总量 | LLM 输出总量 |','|---|---:|---:|']
     lines += [f'| {app} | {m["input_output_total_tokens"]:,} | {m["output_tokens"]:,} |' for app,m in sorted(by_app_metrics.items())]
+    lines += ['', '| 记录中的模型 | 输入＋输出总量 | LLM 输出总量 |', '|---|---:|---:|']
+    for model,m in sorted(by_model_metrics.items(),key=lambda item:(-item[1]['input_output_total_tokens'],item[0])):
+        label={'unknown':'未知模型','conflicting':'模型信息冲突'}.get(model,model).replace('|','\\|').replace('<','&lt;').replace('>','&gt;')
+        lines.append(f'| {label} | {m["input_output_total_tokens"]:,} | {m["output_tokens"]:,} |')
+    lines += ['', '按模型逐日数据见 [daily-model.csv](daily-model.csv)。旧账本缺少模型时归入 unknown；重复调用的已知模型补全未知信息，冲突归入 conflicting，不改变调用身份或总量。模型名沿用日志，不推断第三方服务的实际底层模型。']
     lines += ['', '输入＋输出体现模型累计处理量，包含每轮再次读取的上下文和缓存。输出总量只计本地 usage 中的 output_tokens，适合观察生成规模；可能包含推理和工具调用，不等于最终交付字数或工作价值。', '',
         '逐日数据见 [daily-total.csv](daily-total.csv)，按软件拆分见 [daily.csv](daily.csv)。两表都提供 input_output_total_tokens 与 output_tokens。total_tokens 保留提供商上报值，可能与输入输出之和有少量差异。']
     (base/'OVERVIEW.md').write_text('\n'.join(lines)+'\n',encoding='utf-8')
     from charts import build
-    build(root)
+    build(root,directory=base)
     return summary
