@@ -43,7 +43,7 @@ class ChartDataTests(unittest.TestCase):
             with (base/'daily-model.csv').open('w',newline='') as f:
                 w=csv.writer(f);w.writerow(['date','app','model','calls','input_output_total_tokens','output_tokens'])
                 w.writerows([['2026-10-01','claude',name,2,100,5],['2026-10-01','codex','unknown',3,50,1]])
-            text=charts.build_card(root).read_text()
+            text=charts.build_card(root).read_text(encoding='utf-8')
             data=json.loads(re.search(r'id="usage-data">(.*?)</script>',text).group(1))
             day=data['days'][0]
             self.assertEqual(day['models'][name]['apps']['claude']['tokens'],100)
